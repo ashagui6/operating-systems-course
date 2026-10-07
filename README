@@ -1,0 +1,11 @@
+1. How to compile multi_process.c in terminal:
+    gcc multi_process.c 
+    ./a.out 90 81 78 95 79 72 85
+
+   How to compile multi_thread.java in terminal:
+    javac multi_thread.java 
+    java multi_thread 90 81 78 95 79 72 85
+
+2. Five screenshots have been included in the zip file. Two images are outputs of the C file and three are images of java outputs. 
+
+3. I, Ashley Aguilar, worked on this project individually. 
