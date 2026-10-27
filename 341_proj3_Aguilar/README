@@ -1,0 +1,13 @@
+i. How to compile and run the program
+    gcc buffer.c -pthread
+    ./a.out 20 5 5 > output.txt
+    cat output.txt or click on output.txt file
+
+ii. I, Ashley Aguilar, completed this project alone.
+
+iii. Five screenshots have been included in the zip/folder. I've included screenshots from runs on 
+     LinuxVm, mac terminal, and VSCode terminal. All of them are completely different runs. 
+
+iv. I would like to note that I used a Linux VM because macOS does not support unnamed semaphores created with sem_init(), even though it recognizes the semaphore headers/functions. That's why my semaphores are initializing to -1 when I run the program on my mac. I discovered this while taliking with ChatGPT. The record is in the genai.txt file. 
+
+v. I added a ChatGPTpaste.txt file which has the actual copy & paste conversation. However, the genai.txt file is easier to read because it actually says who was communicating (either myself or chat). 

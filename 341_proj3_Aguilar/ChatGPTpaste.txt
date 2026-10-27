@@ -1,0 +1,739 @@
+ok so I'm working on a coding project for a rounded buffer producer/consumer problem. I was given an incomplete code and i have to complete methods insert_item and remove_item by using semaphores and a mutex lock to synchronize producers and consumers accessing the buffer. I believe i have most of the code correct but i can't understand where I'm going wrong. I hard coded 315 because that's the output example my professor gave us but my output doesn't match his...
+code: 
+/**
+ * Producer Consumer
+ * using counting semaphores as well as a mutex lock.
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <unistd.h>
+#include <time.h>
+
+#define TRUE 1
+#define BUFFER_SIZE 5
+#define MAX_SLEEP 5
+
+#define MIN 0  //minimum value of an element in buffer
+#define MAX 1000 //maximum value of an element in buffer
+
+int buffer[BUFFER_SIZE];
+
+pthread_mutex_t mutex;
+sem_t empty;
+sem_t full;
+
+int insertPointer = 0, removePointer = 0;
+
+void *producer(void *param);
+void *consumer(void *param);
+
+int myRand() {
+   return rand() % (MAX - MIN + 1) + MIN;
+}
+
+int print_buffer(){
+    int i;
+    for (i=0; i< BUFFER_SIZE; i++)
+        printf("slot %d: %d\n", i, buffer[i]);
+    printf("\n");   
+    return 0;
+}
+
+int init_buffer(){
+    int i;
+    for (i=0; i< BUFFER_SIZE; i++)
+        buffer[i] = -1;
+    return 0;
+}
+
+int insert_item(int item)
+{
+// insert code here
+// Producer tries to insert random at current_time
+    sem_wait(&empty);
+    pthread_mutex_lock(&mutex);
+
+// add insert_item to the buffer
+    buffer[insertPointer] = item;
+    insertPointer = (insertPointer + 1) % BUFFER_SIZE;
+    printf("Producer produced %d\n", item);
+    print_buffer();
+
+    pthread_mutex_unlock(&mutex);
+    sem_post(&full);
+
+    return 0;
+}
+
+int remove_item()
+{
+    int item;
+// insert consumer code here
+    sem_wait(&full);
+    pthread_mutex_lock(&mutex);
+
+// remove an item from buffer
+    item = buffer[removePointer];
+    buffer[removePointer] = -1;
+    removePointer = (removePointer + 1) % BUFFER_SIZE;
+    printf("Consumer consumed %d\n", item);
+    print_buffer();
+
+    pthread_mutex_unlock(&mutex);
+    sem_post(&empty);
+
+// Consumer tries to consume random at current_time
+
+    return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    int sleepTime, producerThreads, consumerThreads;
+    int i, j;
+
+    if(argc != 4)
+    {
+        fprintf(stderr, "Useage: <sleep time> <producer threads> <consumer threads>\n");
+        return -1;
+    }
+
+    sleepTime = atoi(argv[1]);
+    producerThreads = atoi(argv[2]);
+    consumerThreads = atoi(argv[3]);
+
+    /* Initialize buffer to be -1 */
+    init_buffer();
+
+    /* Initialize the synchronization tools */
+    printf("%d\n",pthread_mutex_init(&mutex, NULL));
+    printf("%d\n",sem_init(&empty, 0, BUFFER_SIZE));
+    printf("%d\n",sem_init(&full, 0, 0));
+    srand(time(0));
+
+    /* Create the producer and consumer threads */
+    for(i = 0; i < producerThreads; i++)
+    {
+        pthread_t tid;
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_create(&tid, &attr, producer, NULL);
+    }
+
+    for(j = 0; j < consumerThreads; j++)
+    {
+        pthread_t tid;
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_create(&tid, &attr, consumer, NULL);
+    }
+
+    /* Sleep for user specified time */
+    sleep(sleepTime);
+    return 0;
+}
+
+
+void *producer(void *param)
+{
+    int random = 315;
+    int r;
+
+    int current_time=0;
+    while(TRUE)
+    {
+        r = rand() % MAX_SLEEP;
+        sleep(r);
+//random = myRand();
+        current_time+=r;
+
+        printf("Producer tries to insert %d at time %d\n", random, current_time); 
+        if(insert_item(random))
+            fprintf(stderr, "Error");
+
+    }
+
+}
+
+void *consumer(void *param)
+{
+    int r;
+    int current_time=0;
+
+    while(TRUE)
+    {
+        r = rand() % MAX_SLEEP;
+        sleep(r);
+        current_time+=r;
+
+        printf("Consumer tries to consume at time %d\n", current_time, random); 
+
+        if(remove_item())
+                fprintf(stderr, "Error Consuming");
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Worked for 20s
+
+
+
+
+
+
+
+Your two buffer methods are synchronized correctly:
+sem_wait(&empty);
+pthread_mutex_lock(&mutex);
+
+/* change buffer */
+
+pthread_mutex_unlock(&mutex);
+sem_post(&full);
+
+and the reverse for removal is exactly right.
+
+The biggest things causing your output not to match the professor’s example are:
+1. Thread output is nondeterministic. Even with 315 hard-coded, the OS decides which producer/consumer runs first. You should not expect an identical line-by-line output.
+2. Your “tries” messages happen before sem_wait(). So a producer may print that it is trying to insert, then block because the buffer is full. That is normal.
+3. current_time is local to each thread, not the program’s actual elapsed time. With multiple threads, each has its own separate timer.
+4. This line in consumer() has an error:
+printf("Consumer tries to consume at time %d\n", current_time, random);
+
+random does not exist inside consumer, and there is only one %d anyway. Change it to:
+printf("Consumer tries to consume at time %d\n", current_time);
+
+5. Hard-coding 315 means every produced item will be 315. If the assignment expects random values, use:
+random = myRand();
+
+inside the producer loop instead:
+while (TRUE) {
+    r = rand() % MAX_SLEEP;
+    sleep(r);
+    random = myRand();
+    current_time += r;
+
+    printf("Producer tries to insert %d at time %d\n", random, current_time);
+
+    if (insert_item(random))
+        fprintf(stderr, "Error\n");
+}
+
+One small cleanup: don’t print the return values of the initialization functions unless your professor explicitly wants that. These lines add three leading 0s to the output:
+printf("%d\n", pthread_mutex_init(&mutex, NULL));
+printf("%d\n", sem_init(&empty, 0, BUFFER_SIZE));
+printf("%d\n", sem_init(&full, 0, 0));
+
+Use:
+pthread_mutex_init(&mutex, NULL);
+sem_init(&empty, 0, BUFFER_SIZE);
+sem_init(&full, 0, 0);
+
+So: your core producer/consumer synchronization looks good. Fix the consumer printf, remove the initialization printfs, and don’t worry if the output sequence differs from the example—concurrent programs are expected to vary each run.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+yea i don't think i'm supposed to touch the other code that's why i didn't change anything outside the two methods meant for me, but i did remove the extra random variable in the printf statement. And as for matching outputs...I forgot how threads run differently and the random numbers are going to be different. Duh. The only thing i'm confused about now is why I'm not getting three leading 0's and instead I'm getting 0 -1 -1 ... my semaphores seem to be initializing to -1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Worked for 7s
+
+
+
+
+
+
+
+
+
+
+Exactly — 0 -1 -1 means:
+- pthread_mutex_init(...) succeeded (0)
+- both sem_init(...) calls failed (-1)
+Your semaphore logic is not the problem. You’re likely compiling/running it on your Mac. macOS does not support unnamed semaphores created with sem_init(), even though it recognizes the semaphore headers/functions. This project was almost certainly designed to run on Linux.
+
+So if your professor’s instructions say to use sem_init, run it on the school Linux server, a Linux VM, or WSL (if using Windows). On Linux, those initialization calls should print:
+0
+0
+0
+
+You were right not to change the supplied setup code if only insert_item and remove_item are your responsibility.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+I am running it on macOS. But i just ran it on WebVM for Linux environment and it does show everything initialized to zero. Does that mean my code is correct and ready to submit according to these guidelines ... "An incomplete program, called 'buffer_incomplete. c ', is given. Your job is to fill in insert_item() and remove_item(), using semaphores and a mutex lock to synchronize producers and consumers accessing the buffer. An output file called 'output_buffer_producer_consumer.txt', after command-line input './a.out 20 5 5 > output.txt',  is also given. Please study both files carefully. Your program's output should look similar so I can check whether it is correct.
+In particular, please make sure:
+1) There are 5 producer threads and 5 consumer threads using the above command-line input; please print out the ID of each specific producer/consumer.
+2) Due to race conditions, the time a producer tries to insert into the buffer is not necessarily the time it succeeds; similarly, the time a consumer tries to remove from the buffer may differ from the time it actually removes. Please print out the time of each if it occurs."
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Worked for 39s
+
+
+
+
+
+
+
+Not quite ready to submit yet. Your semaphore/mutex code looks correct, and the Linux 0 0 0 confirms the initialization issue was macOS—not your synchronization code.
+
+But your screenshot shows two assignment requirements are still missing:
+1. No producer/consumer ID is printed.
+   Your output says only Producer or Consumer, but the instructions require identifying each of the 5 specific threads.
+2. The successful insert/remove does not print a time.
+   You print, for example:
+   Producer tries to insert ... at time 0
+   Producer produced ...
+   
+   The second line also needs the time it actually succeeds, because it may have waited at sem_wait(&empty) or sem_wait(&full).
+Also, this is important: the value 1431762576 in your output means random is currently uninitialized. The later 0s are also just accidental uninitialized values. Use:
+int random;
+
+then inside the loop, before calling insert_item(random):
+random = myRand();
+
+Do not hard-code 315.
+
+Your current methods are right for the synchronization portion, but they need output additions for the assignment’s full requirements. Since insert_item() and remove_item() currently receive neither a thread ID nor the producer/consumer’s current_time, you cannot fully meet those output requirements by editing only those two methods. You’ll need small changes to the producer/consumer thread setup too, such as passing each thread an ID.
+
+The key difference is:
+Producer 3 tries to insert 482 at time 4
+Producer 3 inserted 482 at time 7
+
+The second timestamp must be recorded after sem_wait(&empty) succeeds and the mutex is acquired—not merely reuse the attempted time.
+
+If you send the professor’s sample output_buffer_producer_consumer.txt or a screenshot of it, I can tell you exactly what to add and where while keeping the given starter code as intact as possible.
+
+oh yea i forgot to add the times because I was looking at the professors output and he didn't add them...would i need to pass the current_time as an argument ?
+No—you do not need to pass current_time into insert_item() or remove_item().
+
+I checked your professor’s provided output, and it only prints the time when a producer/consumer tries an operation:
+
+Producer tries to insert 315 at time 0
+Producer produced 315
+Consumer tries to consume at time 0
+Consumer consumed 315
+There is no timestamp on Producer produced or Consumer consumed. So your existing structure is consistent with the sample:
+
+producer() / consumer() track current_time
+they print the “tries” message
+insert_item() / remove_item() print the actual completed operation and buffer state
+Keep your semaphore/mutex code as-is.
+
+Also, the professor’s actual output does not print producer or consumer IDs either, despite that sentence in the written guidelines. Since the supplied output is what they say to use for comparison—and the starter code only asks you to complete insert_item() and remove_item()—I would follow the sample and not restructure the thread setup.
+
+One thing you should fix: make sure each producer assigns a value before inserting, otherwise values such as 1431762576 are uninitialized garbage. Use:
+
+random = myRand();
+
+inside the producer loop before the printf and insert_item(random) call.
+
+oops yea i commented that out when i hard coded 315. It's back. But although the professor doesn't have it in his example output, I should add it because it's in the description of the program to show the different times from when it tries to when it actually produces or consumes. So how would i go about this, would i pass current_time?
+Worked for 15s
+Don’t pass the existing current_time. It only counts how long that particular thread has slept; it does not increase while the thread is blocked at sem_wait(). So it cannot show the real difference between “tries” and “actually succeeds.”
+
+Instead, use one shared program start time and calculate the elapsed real time whenever you print a message.
+
+Add this near your global variables:
+
+time_t start_time;
+
+int elapsed_time() {
+    return (int)(time(NULL) - start_time);
+}
+
+Then in main(), set it once before creating the threads:
+
+srand(time(0));
+start_time = time(NULL);
+
+In producer(), replace the attempt-time print with:
+
+printf("Producer tries to insert %d at time %d\n",
+       random, elapsed_time());
+
+In consumer():
+
+printf("Consumer tries to consume at time %d\n",
+       elapsed_time());
+
+Then print the actual completion time inside each buffer method, after the semaphore wait and mutex lock succeed.
+
+int insert_item(int item)
+{
+    sem_wait(&empty);
+    pthread_mutex_lock(&mutex);
+
+    buffer[insertPointer] = item;
+    insertPointer = (insertPointer + 1) % BUFFER_SIZE;
+
+    printf("Producer produced %d at time %d\n", item, elapsed_time());
+    print_buffer();
+
+    pthread_mutex_unlock(&mutex);
+    sem_post(&full);
+
+    return 0;
+}
+
+int remove_item()
+{
+    int item;
+
+    sem_wait(&full);
+    pthread_mutex_lock(&mutex);
+
+    item = buffer[removePointer];
+    buffer[removePointer] = -1;
+    removePointer = (removePointer + 1) % BUFFER_SIZE;
+
+    printf("Consumer consumed %d at time %d\n", item, elapsed_time());
+    print_buffer();
+
+    pthread_mutex_unlock(&mutex);
+    sem_post(&empty);
+
+    return 0;
+}
+
+That gives the behavior your instructions describe: the attempt time is printed before sem_wait(), while the successful operation’s time is printed only after the thread actually gets past the semaphore and mutex.
+
+ohh ok so i added the global variable start_time but only to the insert and remove methods. I also added id to each producer and consumer...I believe this is a fixed code ready to submit?...
+/**
+ * Producer Consumer
+ * using counting semaphores as well as a mutex lock.
+ */
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <semaphore.h>
+#include <unistd.h>
+#include <time.h>
+
+
+#define TRUE 1
+#define BUFFER_SIZE 5
+#define MAX_SLEEP 5
+
+
+#define MIN 0  //minimum value of an element in buffer
+#define MAX 1000 //maximum value of an element in buffer
+
+
+int buffer[BUFFER_SIZE];
+
+
+pthread_mutex_t mutex;
+sem_t empty;
+sem_t full;
+time_t start_time;
+
+
+int insertPointer = 0, removePointer = 0;
+
+
+void *producer(void *param);
+void *consumer(void *param);
+
+
+int elapsed_time() {
+    return (int)(time(NULL) - start_time);
+}
+
+
+int myRand() {
+   return rand() % (MAX - MIN + 1) + MIN;
+}
+
+
+int print_buffer(){
+    int i;
+    for (i=0; i< BUFFER_SIZE; i++)
+        printf("slot %d: %d\n", i, buffer[i]);
+    printf("\n");   
+    return 0;
+}
+
+
+int init_buffer(){
+    int i;
+    for (i=0; i< BUFFER_SIZE; i++)
+        buffer[i] = -1;
+    return 0;
+}
+
+
+int insert_item(int item, int id)
+{
+// insert code here
+// Producer tries to insert random at current_time
+    sem_wait(&empty);
+    pthread_mutex_lock(&mutex);
+
+
+// add insert_item to the buffer
+    buffer[insertPointer] = item;
+    insertPointer = (insertPointer + 1) % BUFFER_SIZE;
+    printf("Producer %d produced %d at time %d\n", id, item, elapsed_time());
+    print_buffer();
+
+
+    pthread_mutex_unlock(&mutex);
+    sem_post(&full);
+
+
+    return 0;
+}
+
+
+int remove_item(int id)
+{
+    int item;
+// insert consumer code here
+    sem_wait(&full);
+    pthread_mutex_lock(&mutex);
+
+
+// remove an item from buffer
+    item = buffer[removePointer];
+    buffer[removePointer] = -1;
+    removePointer = (removePointer + 1) % BUFFER_SIZE;
+    printf("Consumer %d consumed %d at time %d\n", id, item, elapsed_time());
+    print_buffer();
+
+
+    pthread_mutex_unlock(&mutex);
+    sem_post(&empty);
+
+
+// Consumer tries to consume random at current_time
+
+
+    return 0;
+}
+
+
+int main(int argc, char *argv[])
+{
+    int sleepTime, producerThreads, consumerThreads;
+    int i, j;
+
+
+    if(argc != 4)
+    {
+        fprintf(stderr, "Useage: <sleep time> <producer threads> <consumer threads>\n");
+        return -1;
+    }
+
+
+    sleepTime = atoi(argv[1]);
+    producerThreads = atoi(argv[2]);
+    consumerThreads = atoi(argv[3]);
+
+
+    /* Initialize buffer to be -1 */
+    init_buffer();
+
+
+    /* Initialize the synchronization tools */
+    printf("%d\n",pthread_mutex_init(&mutex, NULL));
+    printf("%d\n",sem_init(&empty, 0, BUFFER_SIZE));
+    printf("%d\n",sem_init(&full, 0, 0));
+    srand(time(0));
+    start_time = time(NULL);
+
+
+    /* Create the producer and consumer threads */
+    for(i = 0; i < producerThreads; i++)
+    {
+        pthread_t tid;
+        pthread_attr_t attr;
+        int *id = malloc(sizeof(int));
+        *id = i + 1;
+        pthread_attr_init(&attr);
+        pthread_create(&tid, &attr, producer, id);
+    }
+
+
+    for(j = 0; j < consumerThreads; j++)
+    {
+        pthread_t tid;
+        pthread_attr_t attr;
+        int *id = malloc(sizeof(int));
+        *id = j + 1;
+        pthread_attr_init(&attr);
+        pthread_create(&tid, &attr, consumer, id);
+    }
+
+
+    /* Sleep for user specified time */
+    sleep(sleepTime);
+    return 0;
+}
+
+
+
+void *producer(void *param)
+{
+    int id = *(int *)param;
+    free(param);
+    int random;
+    int r;
+
+
+    int current_time=0;
+    while(TRUE)
+    {
+        r = rand() % MAX_SLEEP;
+        sleep(r);
+        random = myRand();
+        current_time+=r;
+
+
+        printf("Producer %d tries to insert %d at time %d\n", id, random, current_time); 
+        if(insert_item(random, id))
+            fprintf(stderr, "Error");
+
+
+    }
+
+
+}
+
+
+void *consumer(void *param)
+{
+    int id = *(int *)param;
+    free(param);
+    int r;
+    int current_time=0;
+
+
+    while(TRUE)
+    {
+        r = rand() % MAX_SLEEP;
+        sleep(r);
+        current_time+=r;
+
+
+        printf("Consumer %d tries to consume at time %d\n", id, current_time); 
+
+
+        if(remove_item(id))
+                fprintf(stderr, "Error Consuming");
+    }
+}
+
+…
+Worked for 25s
+Almost—your IDs and successful-operation timestamps are added correctly. The one thing to fix before submitting is your attempt timestamps.
+
+Right now you print attempts using current_time, which is only that thread’s accumulated sleep time:
+
+printf("Producer %d tries to insert %d at time %d\n", id, random, current_time);
+
+But your successful-operation time uses real elapsed program time:
+
+elapsed_time()
+
+Those are two different clocks, so the comparison would be misleading. Replace both attempt messages with elapsed_time() too:
+
+printf("Producer %d tries to insert %d at time %d\n",
+       id, random, elapsed_time());
+
+printf("Consumer %d tries to consume at time %d\n",
+       id, elapsed_time());
+
+Then you can remove current_time and these lines:
+
+current_time += r;
+
+Your timing flow will then be correct:
+
+Print tries immediately before sem_wait()
+If the thread blocks because the buffer is full/empty, time passes
+Print produced/consumed after it gets through sem_wait() and the mutex lock
+Your ID approach is good:
+
+int *id = malloc(sizeof(int));
+*id = i + 1;
+pthread_create(&tid, &attr, producer, id);
+
+and this safely retrieves and frees it inside the thread:
+
+int id = *(int *)param;
+free(param);
+
+So after changing the two attempt printf statements to use elapsed_time(), your synchronization, IDs, and timing behavior are ready.
+
+ok done i made the changes. Thank you... can you give me a .txt file of our conversation. Please include everything and who said what.
+Done — download the conversation transcript.
